@@ -1,25 +1,18 @@
-## Mapbox integration
+### Proof-of-Delivery (POD) storage
 
-This scaffold includes a Mapbox-ready component at `src/components/MapboxMap.jsx` and the lightweight `MapPlaceholder` now renders it.
+This project includes a simple POD upload UI component at `src/components/PODUpload.jsx` which uploads files to a Supabase Storage bucket named `pod` and inserts a metadata record into the `proof_of_delivery` table.
 
-To enable the map locally:
+To enable POD uploads in your Supabase project:
 
-1. Create a Mapbox access token (https://account.mapbox.com/access-tokens/).
-2. Add it to your `.env` in the `trackflow` folder:
+1. Create a storage bucket called `pod` in Supabase Storage. Choose public or private depending on your privacy needs.
+2. Run the SQL migration `trackflow/db/002_create_proof_of_delivery.sql` in the Supabase SQL editor to create the `proof_of_delivery` table.
+3. Ensure your RLS/storage policies allow authenticated users to upload to the `pod` bucket and insert into the `proof_of_delivery` table. Example storage policy (for public bucket uploads):
 
-VITE_MAPBOX_TOKEN=pk.your_mapbox_token_here
+-- allow uploads to public bucket for authenticated users
+-- replace 'anon' checks with appropriate role checks as needed
 
-3. npm install (if you haven't):
+-- STORAGE policies are configured in the Supabase UI under Storage > Policies
 
-npm install
+4. In the driver dashboard you can now upload images/PDFs and associate them with a shipment ID. The UI component will attempt to insert a record into `proof_of_delivery` after upload.
 
-4. npm run dev
-
-The `MapboxMap` component is intentionally minimal:
-- It creates a Mapbox GL map instance.
-- It accepts `drivers` and `shipments` props to render/update markers.
-- Wire your realtime updates (Supabase Realtime, websockets) at a parent level and pass the data down to the map.
-
-If you want, I can also:
-- scaffold a `useDrivers` / `useShipments` hook that subscribes to Supabase real-time updates and feeds data into the map,
-- or add simple mock data in the Customer/Dispatcher pages so the map shows example markers out-of-the-box.
+If you'd like, I can also scaffold storage & RLS policy SQL snippets for the `pod` bucket and add server-side signed URL usage for private buckets.
