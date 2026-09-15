@@ -25,10 +25,12 @@ export default function PODUpload({ shipmentId: initialShipmentId = '' }){
       // ensure storage bucket 'pod' exists in your Supabase project
       const userResp = await supabase.auth.getUser()
       const user = userResp.data?.user
+      if (!user) throw new Error('You must be signed in to upload a POD')
 
       const timestamp = Date.now()
       const safeName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, '_')
-      const path = `${timestamp}_${safeName}`
+      // IMPORTANT: storage policies require uploads to be prefixed with the uploader's uid
+      const path = `${user.id}/${timestamp}_${safeName}`
 
       const { data: uploadData, error: uploadError } = await supabase.storage.from('pod').upload(path, file, { upsert: false })
       if (uploadError) throw uploadError
@@ -91,7 +93,7 @@ export default function PODUpload({ shipmentId: initialShipmentId = '' }){
         </div>
       ) : null}
 
-      <div className="text-xs text-slate-500">Files are uploaded to the Supabase Storage bucket named <code>pod</code>. Make sure the bucket exists and storage policies allow uploads.</div>
+      <div className="text-xs text-slate-500">Files are uploaded to the Supabase Storage bucket named <code>pod</code>. Uploads are prefixed with the uploader's user id to comply with storage policies (path: <code>{'{user_id}/{timestamp}_{filename}'}</code>).</div>
     </div>
   )
 }
