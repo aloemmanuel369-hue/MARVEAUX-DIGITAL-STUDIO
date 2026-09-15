@@ -1,0 +1,20 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root{
+  --brand-blue: #0b3d91; /* deep blue */
+  --brand-orange: #ff7a18;
+}
+
+/* Dark mode adjustments */
+.dark :root{
+  --bg: #0b1220;
+}
+
+/* Utility to ensure 44px touch targets */
+.btn-touch{ height:44px; min-height:44px; }
+
+/* Simple skeleton */
+.skeleton{ background: linear-gradient(90deg,#eeeeee 25%, #dddddd 37%, #eeeeee 63%); background-size: 400% 100%; animation: shine 1.2s linear infinite; }
+@keyframes shine{ 0%{background-position:100% 0} 100%{background-position:-100% 0} }
