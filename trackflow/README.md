@@ -1,19 +1,25 @@
-# TrackFlow (UI scaffold)
+## Mapbox integration
 
-This directory contains a scaffold for TrackFlow — a logistics/delivery tracking UI built with React + Tailwind + Supabase (client setup). It's intentionally UI-only: map integration, websocket/live location, and RLS policies need to be implemented by you.
+This scaffold includes a Mapbox-ready component at `src/components/MapboxMap.jsx` and the lightweight `MapPlaceholder` now renders it.
 
-Quick start:
+To enable the map locally:
 
-1. cd trackflow
-2. npm install
-3. Create a .env file with:
+1. Create a Mapbox access token (https://account.mapbox.com/access-tokens/).
+2. Add it to your `.env` in the `trackflow` folder:
 
-VITE_SUPABASE_URL=your-supabase-url
-VITE_SUPABASE_ANON_KEY=your-anon-key
+VITE_MAPBOX_TOKEN=pk.your_mapbox_token_here
+
+3. npm install (if you haven't):
+
+npm install
 
 4. npm run dev
 
-Notes:
-- Branch: trackflow-scaffold
-- Roles & RLS: see README-RLS.md placeholder for recommended policies and SQL examples.
-- Map: the MapPlaceholder component is where you'll wire Mapbox/Google Maps and live location updates.
+The `MapboxMap` component is intentionally minimal:
+- It creates a Mapbox GL map instance.
+- It accepts `drivers` and `shipments` props to render/update markers.
+- Wire your realtime updates (Supabase Realtime, websockets) at a parent level and pass the data down to the map.
+
+If you want, I can also:
+- scaffold a `useDrivers` / `useShipments` hook that subscribes to Supabase real-time updates and feeds data into the map,
+- or add simple mock data in the Customer/Dispatcher pages so the map shows example markers out-of-the-box.
