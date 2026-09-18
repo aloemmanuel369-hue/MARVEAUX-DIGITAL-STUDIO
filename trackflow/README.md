@@ -1,29 +1,48 @@
-# TrackFlow (UI scaffold)
+# Still Life Home
 
-This directory contains a scaffold for TrackFlow — a logistics/delivery tracking UI built with React + Tailwind + Supabase (client setup). It's intentionally UI-only: map integration, websocket/live location, and RLS policies need to be implemented by you.
+A calm, editorial e-commerce starter for the Marveaux Digital Studio repository.
 
-Quick start:
+## Run locally
 
-1. cd trackflow
-2. npm install
-3. Create a .env file with:
+```bash
+cd trackflow
+npm install
+cp .env.example .env
+npm run dev
+```
 
-VITE_SUPABASE_URL=your-supabase-url
-VITE_SUPABASE_ANON_KEY=your-anon-key
-VITE_MAPBOX_TOKEN=pk.your_mapbox_token_here
+## Production integrations
 
-4. npm run dev
+- Auth + database: create a Supabase project and run `supabase/schema.sql`
+- Payments: create a Stripe Checkout Edge Function and return a hosted Stripe URL
+- Email: configure SMTP through Supabase Auth, Resend, SendGrid, or Postmark
+- Storage/admin: add a private/public product-images bucket and admin dashboard
+- Webhooks: verify Stripe events and update order status after payment
 
-Notes:
-- Branch: trackflow-scaffold
-- Roles & RLS: see trackflow/db/003_storage_and_rls.sql for tightened policies and guidance.
-- Map: the MapPlaceholder component is where you'll wire Mapbox/Google Maps and live location updates.
-- POD uploads: the client now prefixes storage uploads with the uploader's user id (e.g. `<user_id>/<timestamp>_filename`) to comply with storage policies in `trackflow/db/003_storage_and_rls.sql`.
+Important: do not store API keys in the client app. Keep Stripe and email secrets in server-side functions only.
 
-DB migrations:
-- trackflow/db/002_create_proof_of_delivery.sql — creates proof_of_delivery table
-- trackflow/db/003_storage_and_rls.sql — tightened RLS & storage policies (review before applying)
+## Example Supabase schema
 
-If you'd like, I can also:
-- scaffold a `useDrivers` / `useShipments` hook that subscribes to Supabase real-time updates and feeds data into the map,
-- or add simple mock data in the Customer/Dispatcher pages so the map shows example markers out-of-the-box.
+```sql
+create table if not exists public.orders (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references auth.users(id) on delete set null,
+  email text not null,
+  stripe_session_id text unique,
+  status text not null default 'pending',
+  total_cents integer not null default 0,
+  items jsonb not null default '[]'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.products (
+  id text primary key,
+  name text not null,
+  category text not null,
+  price_cents integer not null,
+  description text,
+  image_url text,
+  active boolean not null default true,
+  created_at timestamptz not null default now()
+);
+```
