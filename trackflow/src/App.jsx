@@ -1,136 +1,39 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
-const API_KEY = import.meta.env.VITE_OPENWEATHER_API_KEY
-const RECENT_KEY = 'skycast-recent-searches'
-const DEFAULT_CITY = 'San Francisco'
-
-const weatherIcon = (code, isDay = true) => {
-  if (code?.startsWith('01')) return isDay ? '☀️' : '🌙'
-  if (code?.startsWith('02')) return isDay ? '🌤️' : '☁️'
-  if (code?.startsWith('03') || code?.startsWith('04')) return '☁️'
-  if (code?.startsWith('09') || code?.startsWith('10')) return '🌧️'
-  if (code?.startsWith('11')) return '⛈️'
-  if (code?.startsWith('13')) return '❄️'
-  return '🌫️'
-}
-
-const getRecent = () => {
-  try { return JSON.parse(localStorage.getItem(RECENT_KEY) || '[]') } catch { return [] }
-}
+const GEO = 'https://geocoding-api.open-meteo.com/v1/search'
+const FORECAST = 'https://api.open-meteo.com/v1/forecast'
+const DEFAULT_CITY = { name: 'Lagos', country: 'Nigeria', latitude: 6.5244, longitude: 3.3792 }
+const RECENTS = 'skycast-recent-searches'
+const FAVORITES = 'skycast-favorite-cities'
+const read = (key, fallback) => { try { return JSON.parse(localStorage.getItem(key) || JSON.stringify(fallback)) } catch { return fallback } }
+const write = (key, value) => { try { localStorage.setItem(key, JSON.stringify(value)) } catch {} }
+const temp = (value, unit) => Math.round(unit === 'F' ? value * 9 / 5 + 32 : value)
+const wind = (value, unit) => Math.round(unit === 'F' ? value * 2.23694 : value * 3.6)
+const icon = (code, day = 1) => code === 0 ? (day ? '☀️' : '🌙') : code < 4 ? '⛅' : code < 60 ? '☁️' : code < 80 ? '🌧️' : code < 吹 ? '⛈️' : '❄️'
+const label = code => code === 0 ? 'Clear sky' : code < 4 ? 'Partly cloudy' : code < 60 ? 'Cloudy' : code < 70 ? 'Rain' : code < 80 ? 'Snow' : code < 90 ? 'Showers' : 'Thunderstorm'
 
 function App() {
-  const [city, setCity] = useState('')
-  const [selectedCity, setSelectedCity] = useState(DEFAULT_CITY)
-  const [weather, setWeather] = useState(null)
-  const [forecast, setForecast] = useState([])
-  const [unit, setUnit] = useState('C')
-  const [recent, setRecent] = useState(getRecent)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-
-  const convertTemp = (celsius) => unit === 'C' ? Math.round(celsius) : Math.round((celsius * 9) / 5 + 32)
-  const tempUnit = unit === 'C' ? '°C' : '°F'
-
-  const loadWeather = async (query) => {
-    if (!API_KEY) {
-      setError('Add VITE_OPENWEATHER_API_KEY to your environment to connect live weather data.')
-      setLoading(false)
-      return
-    }
-    setLoading(true)
-    setError('')
-    try {
-      const currentResponse = await fetch(`https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(query)}&appid=${API_KEY}&units=metric`)
-      if (!currentResponse.ok) throw new Error('City not found. Try searching for another city.')
-      const current = await currentResponse.json()
-      const forecastResponse = await fetch(`https://api.openweathermap.org/data/2.5/forecast?lat=${current.coord.lat}&lon=${current.coord.lon}&appid=${API_KEY}&units=metric`)
-      if (!forecastResponse.ok) throw new Error('Forecast data is unavailable right now.')
-      const forecastData = await forecastResponse.json()
-      setWeather(current)
-      setForecast(forecastData.list)
-      setSelectedCity(`${current.name}, ${current.sys.country}`)
-      const nextRecent = [current.name, ...recent.filter((item) => item.toLowerCase() !== current.name.toLowerCase())].slice(0, 5)
-      setRecent(nextRecent)
-      localStorage.setItem(RECENT_KEY, JSON.stringify(nextRecent))
-    } catch (err) {
-      setError(err.message || 'Something went wrong while loading the weather.')
-    } finally { setLoading(false) }
+  const [city, setCity] = useState(''); const [place, setPlace] = useState(DEFAULT_CITY); const [data, setData] = useState(null)
+  const [suggestions, setSuggestions] = useState([]); const [loading, setLoading] = useState(true); const [error, setError] = useState('')
+  const [unit, setUnit] = useState(() => read('skycast-unit', 'C')); const [dark, setDark] = useState(() => read('skycast-theme', false))
+  const [recents, setRecents] = useState(() => read(RECENTS, [])); const [favorites, setFavorites] = useState(() => read(FAVORITES, [])); const [menu, setMenu] = useState(false)
+  const abort = useRef(null); const debounce = useRef(null)
+  useEffect(() => { document.documentElement.classList.toggle('dark', dark); write('skycast-theme', dark) }, [dark])
+  useEffect(() => { write('skycast-unit', unit) }, [unit])
+  const load = async (next = place) => {
+    abort.current?.abort(); const controller = new AbortController(); abort.current = controller; setLoading(true); setError('')
+    try { const url = `${FORECAST}?latitude=${next.latitude}&longitude=${next.longitude}&current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,weather_code,pressure_msl,wind_speed_10m,wind_direction_10m,visibility&hourly=temperature_2m,precipitation_probability,weather_code,is_day&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,uv_index_max,precipitation_probability_max&timezone=auto&forecast_days=7`; const response = await fetch(url, { signal: controller.signal }); if (!response.ok) throw Error('Weather data is unavailable right now.')
+      const result = await response.json(); setData(result); setPlace(next); const updated = [next, ...recents.filter(x => `${x.name},${x.country}` !== `${next.name},${next.country}`)].slice(0, 5); setRecents(updated); write(RECENTS, updated)
+    } catch (e) { if (e.name !== 'AbortError') setError(e.message || 'Unable to read the sky.') } finally { if (!controller.signal.aborted) setLoading(false) }
   }
-
-  useEffect(() => { loadWeather(DEFAULT_CITY) }, [])
-
-  const dailyForecast = useMemo(() => {
-    const days = []
-    forecast.forEach((item) => {
-      const date = new Date(item.dt * 1000).toDateString()
-      if (!days.some((day) => day.date === date) && days.length < 5) days.push({ date, item })
-    })
-    return days
-  }, [forecast])
-
-  const handleSubmit = (event) => {
-    event.preventDefault()
-    if (city.trim()) { loadWeather(city.trim()); setCity('') }
-  }
-
-  const formatDay = (date, index) => index === 0 ? 'Today' : new Intl.DateTimeFormat('en-US', { weekday: 'short' }).format(new Date(date))
-  const formatTime = (timestamp) => new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(new Date(timestamp * 1000))
-
-  return (
-    <div className="app-shell">
-      <header className="topbar">
-        <a className="logo" href="/" aria-label="Skycast home"><span className="logo-mark">✦</span> skycast</a>
-        <div className="header-meta"><span className="live-dot" /> Live weather, everywhere</div>
-        <div className="unit-toggle" aria-label="Temperature unit">
-          <button className={unit === 'C' ? 'active' : ''} onClick={() => setUnit('C')}>°C</button>
-          <button className={unit === 'F' ? 'active' : ''} onClick={() => setUnit('F')}>°F</button>
-        </div>
-      </header>
-
-      <main>
-        <section className="hero-copy">
-          <p className="overline">Your daily atmosphere</p>
-          <h1>Look up.<br /><em>Feel the forecast.</em></h1>
-          <p className="intro">A calmer way to check the sky. Search a city to see the moment, the week ahead, and everything in between.</p>
-          <form className="search-form" onSubmit={handleSubmit}>
-            <span className="search-icon">⌕</span>
-            <input aria-label="Search city" value={city} onChange={(event) => setCity(event.target.value)} placeholder="Search any city..." />
-            <button type="submit" aria-label="Search">Search <span>↗</span></button>
-          </form>
-          <div className="recent-row">
-            <span>Recent</span>
-            {recent.length ? recent.map((item) => <button key={item} onClick={() => loadWeather(item)}>{item}</button>) : <small>Your searched cities will appear here.</small>}
-          </div>
-        </section>
-
-        {error && <div className="notice">{error}</div>}
-        {loading ? <div className="loading"><span /> Reading the sky...</div> : weather && (
-          <>
-            <section className="current-card">
-              <div className="current-main">
-                <div className="location"><span className="pin">⌖</span><span>{selectedCity}</span><small>Local time {formatTime(weather.dt)}</small></div>
-                <div className="current-temp">{convertTemp(weather.main.temp)}<sup>{tempUnit}</sup></div>
-                <p className="condition">{weather.weather[0].description}</p>
-              </div>
-              <div className="sky-illustration"><span className="sun">☼</span><span className="cloud">☁</span></div>
-              <div className="current-details">
-                <div><span>Feels like</span><strong>{convertTemp(weather.main.feels_like)}{tempUnit}</strong></div>
-                <div><span>Humidity</span><strong>{weather.main.humidity}%</strong></div>
-                <div><span>Wind</span><strong>{Math.round(weather.wind.speed * 3.6)} km/h</strong></div>
-                <div><span>Visibility</span><strong>{(weather.visibility / 1000).toFixed(1)} km</strong></div>
-              </div>
-            </section>
-
-            <section className="forecast-section">
-              <div className="section-heading"><div><p className="overline">The week ahead</p><h2>Five day forecast</h2></div><span className="updated">Updated just now <i /></span></div>
-              <div className="forecast-grid">{dailyForecast.map(({ date, item }, index) => <article className={index === 0 ? 'forecast-card today' : 'forecast-card'} key={date}><span className="forecast-day">{formatDay(date, index)}</span><span className="forecast-icon">{weatherIcon(item.weather[0].icon, item.weather[0].icon.endsWith('d'))}</span><strong>{convertTemp(item.main.temp)}{tempUnit}</strong><span className="forecast-condition">{item.weather[0].main}</span><div className="range"><span>{convertTemp(item.main.temp_min)}°</span><span className="range-line" /><span>{convertTemp(item.main.temp_max)}°</span></div></article>)}</div>
-            </section>
-          </>
-        )}
-      </main>
-      <footer><span>skycast</span><span>Weather with a little more clarity.</span><span>Data by OpenWeatherMap · <a href="https://openweathermap.org/" target="_blank" rel="noreferrer">Learn more ↗</a></span></footer>
-    </div>
-  )
+  useEffect(() => { load() }, [])
+  useEffect(() => { clearTimeout(debounce.current); if (!city.trim()) { setSuggestions([]); return }; debounce.current = setTimeout(async () => { try { const r = await fetch(`${GEO}?name=${encodeURIComponent(city)}&count=5&language=en&format=json`); const j = await r.json(); setSuggestions(j.results || []) } catch {} }, 300); return () => clearTimeout(debounce.current) }, [city])
+  const choose = item => { setCity(''); setSuggestions([]); load(item) }
+  const locate = () => navigator.geolocation?.getCurrentPosition(p => choose({ name: 'Your location', country: '', latitude: p.coords.latitude, longitude: p.coords.longitude }), () => setError('Location access was denied. Search for a city instead.'))
+  const current = data?.current; const daily = data?.daily; const hourly = data?.hourly
+  const favorite = favorites.some(x => x.latitude === place.latitude && x.longitude === place.longitude)
+  const toggleFavorite = () => { const next = favorite ? favorites.filter(x => x.latitude !== place.latitude || x.longitude !== place.longitude) : [...favorites, place]; setFavorites(next); write(FAVORITES, next) }
+  const days = useMemo(() => daily ? daily.time.map((time, i) => ({ time, i })).slice(0, 7) : [], [daily])
+  return <div className="app-shell" id="top"><header className="topbar"><a className="logo" href="#top" aria-label="Skycast home"><span className="logo-mark">✦</span> skycast</a><div className="header-meta"><span className="live-dot" /> Live weather, everywhere</div><nav className={menu ? 'open' : ''}><a href="#today">Today</a><a href="#hourly">Hourly</a><a href="#week">7-Day</a><a href="#saved">Saved</a></nav><div className="unit-toggle"><button className={unit === 'C' ? 'active' : ''} onClick={() => setUnit('C')}>°C</button><button className={unit === 'F' ? 'active' : ''} onClick={() => setUnit('F')}>°F</button><button onClick={() => setDark(!dark)} aria-label="Toggle dark mode">{dark ? '☼' : '☾'}</button><button className="menu-button" onClick={() => setMenu(!menu)} aria-label="Open menu">☰</button></div></header><main><section className="hero-copy"><p className="overline">Your daily atmosphere</p><h1>Look up.<br /><em>Feel the forecast.</em></h1><p className="intro">A calmer way to check the sky. Search a city to see the moment, the week ahead, and everything in between.</p><form className="search-form" onSubmit={e => { e.preventDefault(); if (suggestions[0]) choose(suggestions[0]); else if (city.trim()) choose({ ...DEFAULT_CITY, name: city.trim() }) }}><span className="search-icon">⌕</span><input value={city} onChange={e => setCity(e.target.value)} placeholder="Search any city..." aria-label="Search city" /> <button type="submit">Search ↗</button>{suggestions.length > 0 && <div className="suggestions">{suggestions.map((s, i) => <button type="button" key={`${s.id}-${i}`} onClick={() => choose(s)}>{s.name}, {s.country}<small>{s.admin1 || 'Worldwide'}</small></button>)}</div>}</form><button className="location-button" onClick={locate}>◎ Use my location</button><div className="recent-row"><span>Recent</span>{recents.map(x => <button key={`${x.name}-${x.country}`} onClick={() => choose(x)}>{x.name}</button>)}</div></section>{error && <div className="notice" role="alert">{error} <button onClick={() => load()}>Retry</button></div>}{loading ? <div className="loading"><span /> Reading the sky...</div> : current && <><section className="current-card" id="today"><div className="current-main"><div className="location"><span className="pin">⌖</span><span>{place.name}, {place.country}</span><small>{data.timezone}</small></div><div className="current-temp">{temp(current.temperature_2m, unit)}<sup>°{unit}</sup></div><p className="condition">{label(current.weather_code)}</p></div><div className="sky-illustration"><span className="sun">{icon(current.weather_code, current.is_day)}</span></div><button className="save-button" onClick={toggleFavorite} aria-label="Save city">{favorite ? '★' : '☆'}</button><div className="current-details"><div><span>Feels like</span><strong>{temp(current.apparent_temperature, unit)}°</strong></div><div><span>Humidity</span><strong>{current.relative_humidity_2m}%</strong></div><div><span>Wind</span><strong>{wind(current.wind_speed_10m, unit)} {unit === 'F' ? 'mph' : 'km/h'}</strong></div><div><span>Visibility</span><strong>{(current.visibility / 1000).toFixed(1)} km</strong></div></div></section><section id="hourly" className="forecast-section"><div className="section-heading"><div><p className="overline">The next 24 hours</p><h2>Hourly forecast</h2></div></div><div className="forecast-grid hourly">{hourly.time.slice(0, 24).map((time, i) => <article className="forecast-card" key={time}><span>{new Date(time).toLocaleTimeString([], { hour: 'numeric' })}</span><b>{icon(hourly.weather_code[i], hourly.is_day[i])}</b><strong>{temp(hourly.temperature_2m[i], unit)}°</strong><small>{hourly.precipitation_probability[i]}% rain</small></article>)}</div></section><section id="week" className="forecast-section"><div className="section-heading"><div><p className="overline">The week ahead</p><h2>Seven day forecast</h2></div></div><div className="forecast-grid">{days.map(({ time, i }) => <article className={`forecast-card ${i === 0 ? 'today' : ''}`} key={time}><span>{i === 0 ? 'Today' : new Date(`${time}T12:00`).toLocaleDateString([], { weekday: 'short' })}</span><b>{icon(daily.weather_code[i])}</b><strong>{temp(daily.temperature_2m_max[i], unit)}° / {temp(daily.temperature_2m_min[i], unit)}°</strong><small>{label(daily.weather_code[i])} · {daily.precipitation_probability_max[i]}% rain</small></article>)}</div></section></>}{<section id="saved" className="saved-section"><p className="overline">Your places</p><h2>Saved cities</h2>{favorites.length ? favorites.map(x => <button className="saved-city" key={`${x.name}-${x.latitude}`} onClick={() => choose(x)}>{x.name}, {x.country}</button>) : <p>No saved cities yet. Tap the star on a city to keep it close.</p>}</section></main><footer><strong>skycast</strong><span>Weather with a little more clarity.</span><span>Weather data by <a href="https://open-meteo.com/" target="_blank" rel="noreferrer">Open-Meteo</a></span></footer></div>
 }
-
 export default App
