@@ -1,10 +1,34 @@
-import React from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import App from './App'
 import './styles/index.css'
 
-createRoot(document.getElementById('root')).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
-)
+const API='https://api.open-meteo.com/v1/forecast'
+const GEO='https://geocoding-api.open-meteo.com/v1/search'
+const DEFAULT={name:'Lagos',country:'Nigeria',latitude:6.4531,longitude:3.3958}
+const codes={0:['Clear sky','☀️'],1:['Mainly clear','🌤️'],2:['Partly cloudy','⛅'],3:['Overcast','☁️'],45:['Fog','🌫️'],48:['Fog','🌫️'],51:['Drizzle','🌦️'],53:['Drizzle','🌦️'],55:['Drizzle','🌧️'],61:['Rain','🌧️'],63:['Rain','🌧️'],65:['Heavy rain','🌧️'],71:['Snow','🌨️'],73:['Snow','❄️'],75:['Heavy snow','❄️'],80:['Showers','🌦️'],81:['Showers','🌧️'],82:['Heavy showers','🌧️'],95:['Thunderstorm','⛈️'],96:['Thunderstorm','⛈️'],99:['Thunderstorm','⛈️']}
+const describe=c=>codes[c]||['Cloudy','☁️']
+const temp=(v,u)=>u==='F'?Math.round(v*9/5+32):Math.round(v)
+const day=(s,i)=>i===0?'Today':new Intl.DateTimeFormat('en-US',{weekday:'short'}).format(new Date(s))
+
+function App(){
+ const [city,setCity]=useState(()=>JSON.parse(localStorage.getItem('skycast-city')||'null')||DEFAULT)
+ const [weather,setWeather]=useState(null),[query,setQuery]=useState(''),[suggestions,setSuggestions]=useState([]),[unit,setUnit]=useState(localStorage.getItem('skycast-unit')||'C'),[dark,setDark]=useState(localStorage.getItem('skycast-theme')==='dark'),[loading,setLoading]=useState(true),[error,setError]=useState(''),[saved,setSaved]=useState(()=>JSON.parse(localStorage.getItem('skycast-saved')||'[]'))
+ useEffect(()=>{document.documentElement.classList.toggle('dark',dark);localStorage.setItem('skycast-theme',dark?'dark':'light')},[dark])
+ useEffect(()=>{localStorage.setItem('skycast-unit',unit)},[unit])
+ const load=async p=>{setLoading(true);setError('');try{const q=new URLSearchParams({latitude:p.latitude,longitude:p.longitude,current:'temperature_2m,relative_humidity_2m,apparent_temperature,is_day,weather_code,pressure_msl,wind_speed_10m,visibility',hourly:'temperature_2m,precipitation_probability,weather_code,is_day',daily:'weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,uv_index_max,precipitation_probability_max',timezone:'auto',forecast_days:'7'});const r=await fetch(`${API}?${q}`);if(!r.ok)throw Error();const d=await r.json();setCity(p);setWeather(d);localStorage.setItem('skycast-city',JSON.stringify(p))}catch{setError('Could not load weather right now. Check your connection and try again.')}finally{setLoading(false)}}
+ useEffect(()=>{load(city)},[])
+ const search=async e=>{e.preventDefault();if(!query.trim())return;if(suggestions[0]){setQuery('');setSuggestions([]);load(suggestions[0]);return}try{const r=await fetch(`${GEO}?name=${encodeURIComponent(query)}&count=5&language=en&format=json`);const d=await r.json();setSuggestions(d.results||[])}catch{setError('Search failed. Try another city.')}}
+ const toggleSave=()=>{const key=city.name+'|'+city.country;const next=saved.some(x=>x.name+'|'+x.country===key)?saved.filter(x=>x.name+'|'+x.country!==key):[...saved,city];setSaved(next);localStorage.setItem('skycast-saved',JSON.stringify(next))}
+ const isSaved=useMemo(()=>saved.some(x=>x.name===city.name&&x.country===city.country),[saved,city])
+ const hourly=weather?.hourly;const daily=weather?.daily;const cur=weather?.current
+ return <div className="shell"><header><a className="brand" href="#top"><span>✦</span> skycast</a><nav><a href="#hourly">Hourly</a><a href="#week">7-Day</a><a href="#saved">Saved</a></nav><div className="controls"><button onClick={()=>setUnit(unit==='C'?'F':'C')}>°{unit}</button><button onClick={()=>setDark(!dark)} aria-label="Toggle theme">{dark?'☀':'☾'}</button></div></header>
+ <main id="top"><section className="hero"><p className="overline">Your daily atmosphere</p><h1>Look up.<br/><em>Feel the forecast.</em></h1><p className="intro">A calmer way to check the sky. Search a city to see the moment, the week ahead, and everything in between.</p><form onSubmit={search}><span>⌕</span><input value={query} onChange={e=>{setQuery(e.target.value);if(e.target.value.length<2)setSuggestions([])}} placeholder="Search any city..." aria-label="Search city"/><button>Search</button></form>{suggestions.length>0&&<div className="suggestions">{suggestions.map(x=><button key={x.id} onClick={()=>{setSuggestions([]);setQuery('');load(x)}}>{x.name}, {x.country}</button>)}</div>}</section>
+ {error&&<div className="notice">{error}</div>}
+ {loading?<div className="loading">Reading the sky...</div>:cur&&<><section className="current"><div><div className="place">📍 {city.name}{city.country?`, ${city.country}`:''}<button className="star" onClick={toggleSave}>{isSaved?'★':'☆'}</button></div><div className="bigtemp">{temp(cur.temperature_2m,unit)}°<sup>{unit}</sup></div><p>{describe(cur.weather_code)[0]}</p></div><div className="weatheremoji">{describe(cur.weather_code)[1]}</div><div className="stats"><span>Feels like<strong>{temp(cur.apparent_temperature,unit)}°{unit}</strong></span><span>Humidity<strong>{cur.relative_humidity_2m}%</strong></span><span>Wind<strong>{Math.round(cur.wind_speed_10m)} km/h</strong></span><span>Visibility<strong>{(cur.visibility/1000).toFixed(1)} km</strong></span></div></section>
+ <section id="hourly" className="section"><p className="overline">Next 24 hours</p><h2>Hourly forecast</h2><div className="hourly">{hourly.time.slice(0,24).map((t,i)=><article key={t}><small>{i===0?'Now':new Date(t).toLocaleTimeString([], {hour:'numeric'})}</small><b>{describe(hourly.weather_code[i])[1]}</b><strong>{temp(hourly.temperature_2m[i],unit)}°</strong><small>{hourly.precipitation_probability[i]}%</small></article>)}</div></section>
+ <section id="week" className="section"><p className="overline">The week ahead</p><h2>Seven day forecast</h2><div className="week">{daily.time.map((t,i)=><article key={t}><small>{day(t,i)}</small><b>{describe(daily.weather_code[i])[1]}</b><strong>{temp(daily.temperature_2m_max[i],unit)}°</strong><small>{describe(daily.weather_code[i])[0]}</small><small>{daily.precipitation_probability_max[i]}% rain</small></article>)}</div></section>
+ <section className="section"><p className="overline">Today's details</p><h2>Highlights</h2><div className="highlights"><span>UV index<strong>{Math.round(daily.uv_index_max[0])}</strong></span><span>Sunrise<strong>{new Date(daily.sunrise[0]).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'})}</strong></span><span>Sunset<strong>{new Date(daily.sunset[0]).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'})}</strong></span><span>Pressure<strong>{Math.round(cur.pressure_msl)} hPa</strong></span></div></section>
+ <section id="saved" className="section"><p className="overline">Your places</p><h2>Saved cities</h2><div className="saved">{saved.length?saved.map(x=><button key={x.name+x.country} onClick={()=>load(x)}>{x.name}{x.country?`, ${x.country}`:''}</button>):<p>Star a city to keep it here.</p>}</div></section></>}
+ </main><footer><b>skycast</b><span>Weather with a little more clarity.</span><span>Weather data by Open-Meteo</span></footer></div>
+}
+createRoot(document.getElementById('root')).render(<React.StrictMode><App/></React.StrictMode>)
